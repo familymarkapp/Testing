@@ -153,6 +153,8 @@ body{font-family:'Noto Sans HK',sans-serif;background:var(--bg);color:var(--ink)
   <div class="sbar" id="statsBar"></div>
   <div class="sw"><span class="si">🔍</span><input type="text" id="searchInput" placeholder="搜尋存貨..." oninput="renderList()"></div>
   <div class="chips-wrap" id="chips"></div>
+  <div id="quickAddBar" style="padding:5px 11px 0;display:flex;gap:5px;overflow-x:auto;scrollbar-width:none" class="hidden">
+  </div>
   <div class="share-bar">
     <button class="share-btn" onclick="generateTicket()">🎫 分享票根</button>
   </div>
@@ -486,7 +488,7 @@ function renderList() {
   });
   var el = document.getElementById('itemList');
   if (!list.length) {
-    el.innerHTML = '<div class="empty-state"><div class="em">📦</div><p>未有存貨<br><small>點擊 + 新增第一件存貨</small></p></div>';
+    el.innerHTML = '<div class="empty-state"><div class="em">📦</div><p>未有存貨</p><p style="font-size:12px;margin-top:4px">點擊 + 新增，或用快速新增</p></div>' + getQuickStartHTML();
     return;
   }
   el.innerHTML = '';
@@ -507,7 +509,7 @@ function renderList() {
   }
 }
 
-function renderAll() { renderStats(); renderList(); }
+function renderAll() { renderStats(); renderList(); renderQuickAddBar(); }
 
 function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
@@ -563,6 +565,13 @@ function saveItem() {
   closeM('itemModal');
   renderAll();
   autoAddIfNeeded(item);
+  // Analytics: track item added
+  if (typeof gtag !== 'undefined') {
+    gtag('event', editId ? 'edit_item' : 'add_item', {
+      'event_category': 'inventory',
+      'event_label': item.cat
+    });
+  }
 }
 function promptWaste() {
   if (!editId) return;
@@ -1089,6 +1098,7 @@ function go(tab, btn) {
   document.getElementById('tab-'+tab).classList.add('on');
   btn.classList.add('on');
   document.getElementById('fab').style.display = tab === 'inventory' ? 'flex' : 'none';
+  if (typeof gtag !== 'undefined') gtag('event', 'tab_view', { 'event_label': tab });
   if (tab === 'inventory') renderAll();
   if (tab === 'tips')      renderTips();
   if (tab === 'locations') renderLocations();
@@ -1100,6 +1110,77 @@ function closeM(id) { document.getElementById(id).classList.add('hidden'); }
 document.querySelectorAll('.ov').forEach(function(ov) {
   ov.addEventListener('click', function(e) { if (e.target === ov) ov.classList.add('hidden'); });
 });
+
+// ─── Quick Add ──────────────────────────────────────────
+var QUICK_ITEMS = [
+  // 糧食 x2
+  {name:'雞蛋',cat:'糧食',unit:'隻',emoji:'🥚'},
+  {name:'白米',cat:'糧食',unit:'包',emoji:'🍚'},
+  // 飲料 x2
+  {name:'鮮牛奶',cat:'飲料',unit:'盒',emoji:'🥛'},
+  {name:'樽裝水',cat:'飲料',unit:'支',emoji:'💧'},
+  // 日常用品 x2
+  {name:'廁紙',cat:'日常用品',unit:'包',emoji:'🧻'},
+  {name:'牙膏',cat:'日常用品',unit:'支',emoji:'🪥'},
+  // 清潔 x2
+  {name:'洗手液',cat:'清潔',unit:'支',emoji:'🫧'},
+  {name:'漂白水',cat:'清潔',unit:'支',emoji:'🧴'},
+  // 其他 x2
+  {name:'藥物',cat:'其他',unit:'盒',emoji:'💊'},
+  {name:'電池',cat:'其他',unit:'包',emoji:'🔋'},
+];
+
+function renderQuickAddBar() {
+  var bar = document.getElementById('quickAddBar');
+  if (!bar) return;
+  if (items.length === 0) {
+    bar.classList.remove('hidden');
+  } else {
+    bar.classList.add('hidden');
+    return;
+  }
+  bar.innerHTML = '<span style="font-size:11px;color:var(--k3);white-space:nowrap;align-self:center;flex-shrink:0">快速新增：</span>';
+  QUICK_ITEMS.forEach(function(qi) {
+    var btn = document.createElement('button');
+    btn.style.cssText = 'white-space:nowrap;font-size:11px;padding:4px 10px;border-radius:20px;border:.5px solid var(--div);background:var(--sur);color:var(--k2);cursor:pointer;font-family:inherit;flex-shrink:0';
+    btn.textContent = qi.emoji + ' ' + qi.name;
+    btn.addEventListener('click', function() {
+      quickAddItem(qi);
+      btn.style.background = 'var(--gld)';
+      btn.style.color = 'white';
+      btn.style.borderColor = 'var(--gld)';
+      setTimeout(function() {
+        btn.style.background = 'var(--sur)';
+        btn.style.color = 'var(--k2)';
+        btn.style.borderColor = 'var(--div)';
+      }, 800);
+    });
+    bar.appendChild(btn);
+  });
+}
+
+function quickAddItem(qi) {
+  items.push({
+    id: Date.now().toString(36) + Math.random().toString(36).slice(2),
+    name: qi.name, cat: qi.cat, loc: '', qty: 1,
+    unit: qi.unit, exp: null, min: 1, price: null
+  });
+  saveItems(); renderAll(); renderQuickAddBar();
+  if (typeof gtag !== 'undefined') gtag('event', 'quick_add_item', {'event_label': qi.name});
+}
+
+function getQuickStartHTML() {
+  return '<div style="padding:0 11px;margin-top:8px">' +
+    '<div style="font-size:11px;color:var(--k3);margin-bottom:6px;text-align:center">常用香港家庭存貨</div>' +
+    '<div style="display:flex;flex-wrap:wrap;gap:5px;justify-content:center">' +
+    QUICK_ITEMS.slice(0,8).map(function(qi) {
+      return '<button onclick="quickAddItem(' + JSON.stringify(qi).replace(/'/g,"\\'") + ')" ' +
+        'style="font-size:12px;padding:6px 12px;border-radius:20px;border:.5px solid var(--div);' +
+        'background:var(--sur);color:var(--k2);cursor:pointer;font-family:inherit">' +
+        qi.emoji + ' ' + qi.name + '</button>';
+    }).join('') +
+    '</div></div>';
+}
 
 // ─── Init ─────────────────────────────────────────────
 loadAll();
